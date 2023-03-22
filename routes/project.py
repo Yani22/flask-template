@@ -6,6 +6,7 @@ from app.models.Project import Project
 from app.models.Equipment import Equipment
 from app.models.Manpower import Manpower
 from app.models.ProjectDetails import ProjectDetails
+from app import db
 
 project = Blueprint('project', __name__)
 
@@ -39,28 +40,30 @@ def test_delete(project_id):
 
 @project.route('/materials/<project_id>', methods=['GET'])
 def get_project_materials(project_id):
-    project = Project.query.get_or_404(project_id)
-
-    materials = Material.query.filter_by(project_id=project_id)\
-                              .order_by(Material.quantity.desc())\
-                              .all()
+    materials = db.session.query(Material.material_name, Material.price, Material.quantity,
+                                  Project.name, Project.location) \
+        .join(Project, Material.project_id == Project.id) \
+        .filter(Material.project_id == project_id) \
+        .order_by(Material.quantity.desc()) \
+        .all()
 
     materials_list = []
-    for material in materials:
+    for m in materials:
         material_dict = {
-            'material': material.material_name,
-            'price': material.price,
-            'quantity': material.quantity
+            'material': m[0],
+            'price': m[1],
+            'quantity': m[2]
         }
         materials_list.append(material_dict)
 
     result_dict = {
-        'name': project.name,
-        'location': project.location,
+        'name': materials[0][3],
+        'location': materials[0][4],
         'materials': materials_list
     }
 
     return jsonify(result_dict)
+
 
 
 @project.route('/equipments/<project_id>', methods=['GET'])
@@ -91,46 +94,56 @@ def get_project_equipments(project_id):
 
 
 
+
 @project.route('/manpower/<project_id>', methods=['GET'])
 def get_project_manpower(project_id):
-    project = Project.query.get_or_404(project_id)
+    query = db.session.query(Project.name, Project.location, Manpower.manpower_name,
+                             Manpower.position, Manpower.rate_per_hour) \
+        .join(Manpower, Project.id == Manpower.project_id) \
+        .filter(Project.id == project_id) \
+        .order_by(Manpower.manpower_name.asc()) \
+        .all()
 
-    manpower = Manpower.query.filter_by(project_id=project_id).order_by(Manpower.manpower_name.asc()).all()
-
-    manpowers_dict = [{'manpower': m.manpower_name, 'position': m.position, 'rate': m.rate_per_hour} for m in manpower]
+    manpowers_dict = []
+    for row in query:
+        manpower_dict = {
+            'manpower': row[2],
+            'position': row[3],
+            'rate': row[4]
+        }
+        manpowers_dict.append(manpower_dict)
 
     result_dict = {
-        'name': project.name,
-        'location': project.location,
+        'name': query[0][0],
+        'location': query[0][1],
         'manpower': manpowers_dict
     }
 
     return jsonify(result_dict)
 
 
+
 @project.route('/details/<project_id>', methods=['GET'])
 def get_project_details(project_id):
-    query = db.session.query(Project.name, Project.location, ProjectDetails.engineer,
-                             ProjectDetails.architect, ProjectDetails.project_manager) \
-        .join(ProjectDetails, Project.id == ProjectDetails.project_id) \
-        .filter(Project.id == project_id) \
-        .first()
+    project = db.session.query(Project, ProjectDetails).join(ProjectDetails).filter(Project.id == project_id).first()
 
-    material_count, equipment_count, manpower_count = db.session.query(
-        Material.query.filter_by(project_id=project_id).count(),
-        Equipment.query.filter_by(project_id=project_id).count(),
-        Manpower.query.filter_by(project_id=project_id).count()
-    ).all()
+    if not project:
+        abort(404)
+
+    material_count = Material.query.filter_by(project_id=project_id).count()
+    equipment_count = Equipment.query.filter_by(project_id=project_id).count()
+    manpower_count = Manpower.query.filter_by(project_id=project_id).count()
 
     result_dict = {
-        'name': query[0],
-        'location': query[1],
-        'engineer': query[2],
-        'architect': query[3],
-        'project_manager': query[4],
+        'name': project.Project.name,
+        'location': project.Project.location,
+        'engineer': project.ProjectDetails.engineer,
+        'architect': project.ProjectDetails.architect,
+        'project_manager': project.ProjectDetails.project_manager,
         'material_count': material_count,
         'equipment_count': equipment_count,
         'manpower_count': manpower_count
     }
 
     return jsonify(result_dict)
+
